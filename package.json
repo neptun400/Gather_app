@@ -1,0 +1,14 @@
+{
+  "name": "gather-desktop",
+  "version": "1.0.0",
+  "description": "Gather als eigenständige Desktop-App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "estefan",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
