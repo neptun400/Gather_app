@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, shell } = require('electron');
+const { app, BrowserWindow, session, shell, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
 
 // Gather läuft in einem eigenen, persistenten Kontext (eigenes Profil/Session),
@@ -37,6 +37,29 @@ function createWindow() {
     callback(allowed.includes(permission));
   });
   ses.setPermissionCheckHandler(() => true);
+
+  // Bildschirm teilen: Electron hat seit v17 keinen eingebauten Quellen-Auswähler.
+  // Wenn die Web-App getDisplayMedia() aufruft, müssen wir hier eine Quelle liefern,
+  // sonst schlägt das Teilen fehl. Wir zeigen einen eigenen Auswahl-Dialog.
+  ses.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 }
+      });
+      const chosenId = await pickSource(sources);
+      const chosen = sources.find((s) => s.id === chosenId);
+      if (chosen) {
+        callback({ video: chosen });
+      } else {
+        // Abgebrochen: Anfrage ablehnen.
+        callback();
+      }
+    } catch (err) {
+      console.error('Bildschirmfreigabe fehlgeschlagen:', err);
+      callback();
+    }
+  });
 
   ses.setUserAgent(CHROME_UA);
 
@@ -78,6 +101,51 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+}
+
+// Zeigt einen Auswahl-Dialog mit allen teilbaren Bildschirmen/Fenstern und
+// liefert die ID der gewählten Quelle (oder null bei Abbruch).
+function pickSource(sources) {
+  return new Promise((resolve) => {
+    const picker = new BrowserWindow({
+      width: 760,
+      height: 560,
+      title: 'Zum Teilen auswählen',
+      parent: mainWindow,
+      modal: true,
+      autoHideMenuBar: true,
+      backgroundColor: '#1c1c28',
+      webPreferences: {
+        // Lokale, vertrauenswürdige Seite ohne Remote-Inhalte – einfache IPC ok.
+        nodeIntegration: true,
+        contextIsolation: false
+      }
+    });
+
+    let settled = false;
+    const finish = (id) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeHandler('get-sources');
+      ipcMain.removeListener('picker-choose', onChoose);
+      if (!picker.isDestroyed()) picker.close();
+      resolve(id);
+    };
+
+    const onChoose = (_event, id) => finish(id);
+
+    ipcMain.handle('get-sources', () =>
+      sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        thumbnail: s.thumbnail.toDataURL()
+      }))
+    );
+    ipcMain.on('picker-choose', onChoose);
+
+    picker.on('closed', () => finish(null));
+    picker.loadFile(path.join(__dirname, 'picker.html'));
   });
 }
 
