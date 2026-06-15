@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build-Ausgaben
+dist/
+out/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
